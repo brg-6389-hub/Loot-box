@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="90" viewBox="0 0 520 90" fill="none" role="img" aria-labelledby="logoTitle logoDesc">
+  <title id="logoTitle">Loot Box Logo</title>
+  <desc id="logoDesc">Loot Box gold wordmark on dark gradient background.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="520" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#030303"/>
+      <stop offset="0.45" stop-color="#0D0E11"/>
+      <stop offset="1" stop-color="#2D2E32"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="72" y1="26" x2="450" y2="66" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4E8A4"/>
+      <stop offset="0.52" stop-color="#C8A65D"/>
+      <stop offset="1" stop-color="#8D6A32"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="88" y1="26" x2="124" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FAEEB0"/>
+      <stop offset="1" stop-color="#A17836"/>
+    </linearGradient>
+  </defs>
+  <rect width="520" height="90" rx="10" fill="url(#bg)"/>
+  <text x="65" y="60" fill="url(#gold)" font-size="62" letter-spacing="2" font-family="Times New Roman, Georgia, serif">L</text>
+  <g transform="translate(86 26)">
+    <circle cx="18" cy="18" r="17.5" stroke="url(#ring)" stroke-width="5"/>
+    <path d="M18 2 L22 6 L18 10 L14 6 Z" fill="url(#ring)"/>
+    <path d="M34 18 L30 22 L26 18 L30 14 Z" fill="url(#ring)"/>
+    <path d="M18 34 L14 30 L18 26 L22 30 Z" fill="url(#ring)"/>
+    <path d="M2 18 L6 14 L10 18 L6 22 Z" fill="url(#ring)"/>
+  </g>
+  <text x="133" y="60" fill="url(#gold)" font-size="62" letter-spacing="2" font-family="Times New Roman, Georgia, serif">OT BOX</text>
+</svg>

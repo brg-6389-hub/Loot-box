@@ -1,0 +1,18 @@
+# Comentario PT-PT: configuracao do projeto LootBox mantida pela equipa.
+# Define como a Netlify deve compilar e publicar a aplicacao.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Redireciona o dominio com www para o dominio principal.
+[[redirects]]
+  from = "https://www.lootbox.marketplace/*"
+  to = "https://lootbox.marketplace/:splat"
+  status = 301
+  force = true
+
+# Mantem o fallback SPA para que as rotas do frontend funcionem em acesso direto.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
