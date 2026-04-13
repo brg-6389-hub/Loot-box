@@ -11,8 +11,8 @@ import { db, initDb, createId } from './db.mjs';
 
 // Configuracao principal do servidor HTTP e das integracoes externas.
 const app = express();
-const HOST = process.env.API_HOST || '127.0.0.1';
-const PORT = Number(process.env.API_PORT || 8787);
+const HOST = process.env.API_HOST || '0.0.0.0';
+const PORT = Number(process.env.PORT || process.env.API_PORT || 8787);
 const CLIENT_URL = process.env.CLIENT_URL || 'http://127.0.0.1:4173';
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
