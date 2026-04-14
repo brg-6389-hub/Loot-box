@@ -30,6 +30,8 @@ const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER || '';
 const SMS_DEBUG = String(process.env.SMS_DEBUG || 'true') === 'true';
+const CARD_CODE_TTL_MS = 10 * 60 * 1000;
+const cardVerificationRequests = new Map();
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')
   .map((value) => value.trim().toLowerCase())
@@ -95,6 +97,22 @@ function maskPhone(phone) {
   const normalized = normalizePhone(phone);
   if (normalized.length <= 4) return normalized;
   return `${'*'.repeat(Math.max(0, normalized.length - 4))}${normalized.slice(-4)}`;
+}
+
+function storeCardVerification(userId, code) {
+  cardVerificationRequests.set(userId, { code, expiresAt: Date.now() + CARD_CODE_TTL_MS });
+}
+
+function verifyCardCode(userId, code) {
+  const entry = cardVerificationRequests.get(userId);
+  if (!entry) return { ok: false, reason: 'missing' };
+  if (Date.now() > entry.expiresAt) {
+    cardVerificationRequests.delete(userId);
+    return { ok: false, reason: 'expired' };
+  }
+  if (String(code).trim() !== String(entry.code)) return { ok: false, reason: 'invalid' };
+  cardVerificationRequests.delete(userId);
+  return { ok: true };
 }
 
 function buildUsernameBase(value) {
@@ -974,6 +992,61 @@ app.post('/api/auth/profile', auth, (req, res) => {
 });
 
 app.get('/api/payment-methods', auth, (req, res) => res.json({ paymentMethods: getPaymentMethods(req.userId) }));
+
+app.post('/api/payment-methods/card/request-code', auth, async (req, res) => {
+  const row = db.prepare('SELECT phone FROM users WHERE id = ?').get(req.userId);
+  if (!row?.phone) return res.status(400).json({ error: 'Phone required' });
+  const normalizedPhone = normalizePhone(row.phone);
+  if (!normalizedPhone) return res.status(400).json({ error: 'Phone invalid' });
+
+  const code = createCode();
+  storeCardVerification(req.userId, code);
+
+  try {
+    await sendSms({
+      to: normalizedPhone,
+      message: `Código de verificação do cartão LOOT BOX: ${code}. Expira em 10 minutos.`,
+    });
+  } catch {
+    // Sem SMS configurado, seguimos em modo de desenvolvimento.
+  }
+
+  return res.json({ success: true, phoneMasked: maskPhone(normalizedPhone), debugSmsCode: SMS_DEBUG ? code : undefined });
+});
+
+app.post('/api/payment-methods/card/confirm', auth, (req, res) => {
+  const { code, method } = req.body || {};
+  if (!code || !method) return res.status(400).json({ error: 'Missing data' });
+  const verification = verifyCardCode(req.userId, code);
+  if (!verification.ok) {
+    return res.status(400).json({ error: verification.reason === 'expired' ? 'Code expired' : 'Invalid code' });
+  }
+
+  const last4 = String(method.last4 || '').replace(/\D/g, '');
+  const expiresAt = String(method.expiresAt || '').trim();
+  if (!last4 || last4.length < 4 || !expiresAt) {
+    return res.status(400).json({ error: 'Invalid card data' });
+  }
+
+  const hasDefault = db.prepare('SELECT id FROM payment_methods WHERE user_id = ? AND is_default = 1').get(req.userId);
+  db.prepare(
+    `INSERT INTO payment_methods
+      (id,user_id,type,label,is_default,brand,last4,holder_name,expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    createId('pm'),
+    req.userId,
+    'card',
+    String(method.label || `Cartão **** ${last4}`),
+    hasDefault ? 0 : 1,
+    method.brand ? String(method.brand) : null,
+    last4.slice(-4),
+    method.holderName ? String(method.holderName) : null,
+    expiresAt,
+  );
+
+  return res.json({ success: true });
+});
 
 app.post('/api/payment-methods', auth, (req, res) => {
   const { type, label, brand, last4, holderName, expiresAt, phone, email, iban, details } = req.body;

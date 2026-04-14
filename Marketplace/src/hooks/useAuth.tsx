@@ -62,6 +62,7 @@ interface AuthContextType {
   logout: () => void;
   deleteAccount: () => Promise<{ success: boolean; reason?: 'recent_login_required' | 'server_error' }>;
   addPaymentMethod: (method: Omit<PaymentMethod, 'id' | 'isDefault'>) => Promise<void>;
+  refreshPaymentMethods: () => Promise<void>;
   setDefaultPaymentMethod: (methodId: string) => Promise<void>;
   removePaymentMethod: (methodId: string) => Promise<void>;
 }
@@ -615,6 +616,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await syncPaymentMethods();
   };
 
+  const refreshPaymentMethods = async () => {
+    await syncPaymentMethods();
+  };
+
   const setDefaultPaymentMethod = async (methodId: string) => {
     await apiFetch(`/api/payment-methods/${methodId}/default`, { method: 'PATCH' });
     await syncPaymentMethods();
@@ -645,6 +650,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         deleteAccount,
         addPaymentMethod,
+        refreshPaymentMethods,
         setDefaultPaymentMethod,
         removePaymentMethod,
       }}

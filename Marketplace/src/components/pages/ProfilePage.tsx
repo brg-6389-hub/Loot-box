@@ -11,6 +11,7 @@ import { useProducts } from '@/hooks/useProducts';
 import { useMarketplace } from '@/hooks/useMarketplace';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useToast } from '@/hooks/use-toast';
+import { apiFetch } from '@/lib/api';
 import type { Order, PaymentMethodType, Product } from '@/types';
 
 interface ProfilePageProps {
@@ -24,6 +25,7 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
     logout,
     deleteAccount,
     addPaymentMethod,
+    refreshPaymentMethods,
     setDefaultPaymentMethod,
     removePaymentMethod,
     isSeller,
@@ -46,9 +48,6 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
   const [cardCvc, setCardCvc] = useState('');
   const [paypalEmail, setPaypalEmail] = useState('');
   const [mbwayPhone, setMbwayPhone] = useState('');
-  const [multibancoReference, setMultibancoReference] = useState('');
-  const [otherMethodLabel, setOtherMethodLabel] = useState('');
-  const [otherMethodDetails, setOtherMethodDetails] = useState('');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -74,6 +73,17 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
   const [phoneVerifyVisible, setPhoneVerifyVisible] = useState(false);
   const [phoneVerifyMasked, setPhoneVerifyMasked] = useState<string | null>(null);
   const [phoneVerifyDebug, setPhoneVerifyDebug] = useState<string | null>(null);
+  const [cardVerifyOpen, setCardVerifyOpen] = useState(false);
+  const [cardVerifyCode, setCardVerifyCode] = useState('');
+  const [cardVerifyMasked, setCardVerifyMasked] = useState<string | null>(null);
+  const [cardVerifyDebug, setCardVerifyDebug] = useState<string | null>(null);
+  const [pendingCardMethod, setPendingCardMethod] = useState<{
+    label: string;
+    holderName?: string;
+    last4: string;
+    brand?: string;
+    expiresAt: string;
+  } | null>(null);
 
   if (!user) return null;
 
@@ -145,9 +155,6 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
     setCardCvc('');
     setPaypalEmail('');
     setMbwayPhone('');
-    setMultibancoReference('');
-    setOtherMethodLabel('');
-    setOtherMethodDetails('');
     setMethodType('mbway');
   };
 
@@ -514,14 +521,41 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
         toast({ title: 'Erro', description: 'CVC inválido.', variant: 'destructive' });
         return;
       }
-      void addPaymentMethod({
-        type: 'card',
+      if (!user?.phone) {
+        toast({
+          title: 'Telemóvel em falta',
+          description: 'Para adicionar cartão, confirma um número de telemóvel no perfil.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const pending = {
         label: `Cartão **** ${digits.slice(-4)}`,
         holderName: holderName.trim() || undefined,
         last4: digits.slice(-4),
         brand: digits.startsWith('4') ? 'Visa' : digits.startsWith('5') ? 'Mastercard' : undefined,
         expiresAt: cardExpiry.trim(),
-      });
+      };
+      setPendingCardMethod(pending);
+      void (async () => {
+        try {
+          const data = await apiFetch<{ phoneMasked?: string; debugSmsCode?: string }>('/api/payment-methods/card/request-code', {
+            method: 'POST',
+          });
+          setCardVerifyMasked(data.phoneMasked || null);
+          setCardVerifyDebug(data.debugSmsCode || null);
+          setCardVerifyCode('');
+          setCardVerifyOpen(true);
+          toast({ title: 'Código enviado', description: 'Enviámos um código para confirmar o cartão.' });
+        } catch (err) {
+          toast({
+            title: 'Falha no envio',
+            description: err instanceof Error ? err.message : 'Não foi possível enviar o código.',
+            variant: 'destructive',
+          });
+        }
+      })();
+      return;
     }
 
     if (methodType === 'paypal') {
@@ -548,34 +582,38 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
       });
     }
 
-    if (methodType === 'multibanco') {
-      if (!holderName.trim() || multibancoReference.trim().length < 6) {
-        toast({ title: 'Erro', description: 'Preenche o titular e a referencia Multibanco.', variant: 'destructive' });
-        return;
-      }
-      void addPaymentMethod({
-        type: 'multibanco',
-        label: `Multibanco (${protectVisibleValue(multibancoReference.trim(), 4)})`,
-        holderName: holderName.trim(),
-        iban: multibancoReference.trim(),
-      });
-    }
-
-    if (methodType === 'other') {
-      if (!otherMethodLabel.trim()) {
-        toast({ title: 'Erro', description: 'Indica o método de pagamento.', variant: 'destructive' });
-        return;
-      }
-      void addPaymentMethod({
-        type: 'other',
-        label: otherMethodLabel.trim(),
-        details: otherMethodDetails.trim() || undefined,
-      });
-    }
-
     addNotification({ title: 'Método adicionado', message: 'Pagamento guardado com sucesso.', type: 'success' });
     toast({ title: 'Método adicionado', description: 'Pagamento guardado com sucesso.' });
     closeAndReset();
+  };
+
+  const handleConfirmCardVerification = async () => {
+    if (!cardVerifyCode.trim()) {
+      toast({ title: 'Código em falta', description: 'Escreve o código recebido por SMS.' });
+      return;
+    }
+    if (!pendingCardMethod) {
+      toast({ title: 'Erro', description: 'Não foi possível validar o cartão.', variant: 'destructive' });
+      return;
+    }
+    try {
+      await apiFetch('/api/payment-methods/card/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ code: cardVerifyCode.trim(), method: pendingCardMethod }),
+      });
+      await refreshPaymentMethods();
+      addNotification({ title: 'Cartão confirmado', message: 'O cartão foi adicionado com sucesso.', type: 'success' });
+      toast({ title: 'Cartão confirmado', description: 'O cartão foi adicionado com sucesso.' });
+      setCardVerifyOpen(false);
+      setPendingCardMethod(null);
+      closeAndReset();
+    } catch (err) {
+      toast({
+        title: 'Erro na verificação',
+        description: err instanceof Error ? err.message : 'Não foi possível validar o cartão.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleSetDefaultPaymentMethod = async (methodId: string) => {
@@ -1283,9 +1321,7 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
               >
                 <option value="paypal">PayPal</option>
                 <option value="mbway">MB Way</option>
-                <option value="multibanco">Multibanco</option>
                 <option value="card">Cartão</option>
-                <option value="other">Outro</option>
               </select>
             </div>
             {methodType === 'card' && (
@@ -1304,22 +1340,42 @@ export function ProfilePage({ onLogout, onOpenPersonalData }: ProfilePageProps) 
             {methodType === 'mbway' && (
               <Input placeholder="912345678" value={mbwayPhone} onChange={(e) => setMbwayPhone(e.target.value)} className="bg-[#0A0A0A] border-[#222] text-[#E8E0C8]" />
             )}
-            {methodType === 'multibanco' && (
-              <div className="space-y-3">
-                <Input placeholder="Titular" value={holderName} onChange={(e) => setHolderName(e.target.value)} className="bg-[#0A0A0A] border-[#222] text-[#E8E0C8]" />
-                <Input placeholder="Referencia Multibanco" value={multibancoReference} onChange={(e) => setMultibancoReference(e.target.value)} className="bg-[#0A0A0A] border-[#222] text-[#E8E0C8]" />
-              </div>
-            )}
-            {methodType === 'other' && (
-              <div className="space-y-3">
-                <Input placeholder="Nome do método" value={otherMethodLabel} onChange={(e) => setOtherMethodLabel(e.target.value)} className="bg-[#0A0A0A] border-[#222] text-[#E8E0C8]" />
-                <Input placeholder="Detalhes adicionais" value={otherMethodDetails} onChange={(e) => setOtherMethodDetails(e.target.value)} className="bg-[#0A0A0A] border-[#222] text-[#E8E0C8]" />
-              </div>
-            )}
             <Button type="submit" className="w-full btn-gold rounded-lg font-semibold">
               Guardar método
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={cardVerifyOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCardVerifyOpen(false);
+            setPendingCardMethod(null);
+            setCardVerifyCode('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm bg-[#111] border-[#222] text-[#E8E0C8]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">Confirmar cartão</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-[#b4aa90]">
+              {cardVerifyMasked ? `Enviámos um código para ${cardVerifyMasked}.` : 'Enviámos um código para o teu telemóvel.'}
+            </p>
+            {cardVerifyDebug ? <p className="text-[11px] text-[#d8c28a]">Código de teste: {cardVerifyDebug}</p> : null}
+            <Input
+              placeholder="Código SMS"
+              value={cardVerifyCode}
+              onChange={(e) => setCardVerifyCode(e.target.value)}
+              className="bg-[#0A0A0A] border-[#222] text-[#E8E0C8]"
+            />
+            <Button onClick={() => void handleConfirmCardVerification()} className="w-full btn-gold rounded-lg font-semibold">
+              Confirmar cartão
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
